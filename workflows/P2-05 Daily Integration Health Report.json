@@ -1,0 +1,1130 @@
+{
+  "name": "P2-05 Daily Integration Health Report",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "events",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "2effe55e-a9ec-42da-9efd-4ad0f8764953",
+      "name": "Webhook Events",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        80
+      ],
+      "webhookId": "c3f8960d-667a-4405-8d51-146ebbf13bc7"
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.body.event_id }}.{{ $json.body.type }}.{{ $json.body.timestamp }}",
+        "dataPropertyName": "computedSignature",
+        "secret": "demo-secret-change-me"
+      },
+      "id": "9bc3edf2-e25c-4959-addf-0d159fd00ecd",
+      "name": "Compute HMAC",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first().json;\nconst b = j.body || {};\nlet reason = null;\nif (!b.event_id || !b.type || !b.timestamp) reason = 'malformed';\nelse if (j.headers['x-signature'] !== j.computedSignature) reason = 'bad_signature';\nelse if (Math.abs(Date.now() - new Date(b.timestamp).getTime()) > 300000) reason = 'stale_timestamp';\nreturn [{ json: { valid: !reason, reason, body: b } }];"
+      },
+      "id": "77703c1f-f03b-4369-a6ec-acdfc6afa51e",
+      "name": "Validate Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0cb6a946-0983-4daf-a980-ddf49d19588d",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "98152282-f045-4c36-8940-f6849f34c48e",
+      "name": "Signature OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "events_inbox"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_id": "={{ $json.body.event_id }}",
+            "type": "={{ $json.body.type }}",
+            "payload": "={{ JSON.stringify($json.body.payload) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "event_id",
+              "displayName": "event_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "type",
+              "displayName": "type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payload",
+              "displayName": "payload",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "2c9825cc-3f94-4373-a1d8-da517df62995",
+      "name": "Store in Inbox",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "nDYbMEFIrK0Fj0XX",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\":\"accepted\"}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "4320b54c-c56f-4083-bdf8-033840b0f029",
+      "name": "Respond 202 Accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: $json.reason }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "7852dfaa-1987-403a-b542-2c6ae1e71434",
+      "name": "Respond 401 Rejected",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "004ef2ed-f359-4b67-9be7-4e197590ddc0",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -960,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE events_inbox\nSET status = 'processing', attempts = attempts + 1, claimed_at = now()\nWHERE id IN (\n  SELECT id FROM events_inbox\n  WHERE (status IN ('received', 'retry') AND next_attempt_at <= now())\n     OR (status = 'processing' AND claimed_at < now() - interval '10 minutes')\n  ORDER BY id\n  LIMIT 10\n  FOR UPDATE SKIP LOCKED\n)\nRETURNING id, event_id, type, payload, attempts;",
+        "options": {}
+      },
+      "id": "e09feb14-5a7d-47aa-bb3c-861b4d8bb965",
+      "name": "Claim Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -720,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "nDYbMEFIrK0Fj0XX",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const map = {\n  'user.signed_up': 'lead',\n  'trial.started': 'trial',\n  'invoice.paid': 'customer',\n  'subscription.cancelled': 'churned'\n};\nreturn $input.all().map(i => {\n  const e = i.json;\n  const stage = map[e.type];\n  const p = e.payload || {};\n  return { json: {\n    event_id: e.event_id,\n    attempts: e.attempts,\n    supported: !!stage && !!p.email,\n    crm: stage ? { email: p.email, name: p.name || '', stage, amount: p.amount || 0, event_id: e.event_id } : null\n  }};\n});"
+      },
+      "id": "a46a2ab0-38f2-4711-b95b-6c2fd4f5cd2a",
+      "name": "Transform to CRM Call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "623c0c5e-bbab-460b-b970-22405a4dc932",
+              "leftValue": "={{ $json.supported }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7c0a6707-18dc-4a80-9f20-d7ee3168d72b",
+      "name": "Supported?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/mock-crm",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.crm.event_id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.crm) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "ca0ac72f-3af9-4f5e-a5d9-222fdb9795f0",
+      "name": "Call CRM API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        384
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pairs each HTTP response with the event it belongs to (same order)\nconst src = $('Supported?').all(0);\nconst MAX_ATTEMPTS = 5;\nreturn $input.all().map((it, idx) => {\n  const s = src[idx].json;\n  const code = it.json.statusCode;\n  const ok = code >= 200 && code < 300;\n  const retryable = !ok && (!code || code === 429 || code >= 500);\n  const outcome = ok ? 'done' : (retryable && s.attempts < MAX_ATTEMPTS ? 'retry' : 'dead');\n  const delayMin = Math.pow(2, s.attempts); // exponential backoff: 2, 4, 8, 16 min\n  return { json: {\n    event_id: s.event_id,\n    status: outcome,\n    last_error: ok ? '' : `HTTP ${code || 'network error'}`,\n    next_attempt_at: new Date(Date.now() + (outcome === 'retry' ? delayMin * 60000 : 0)).toISOString(),\n    updated_at: new Date().toISOString()\n  }};\n});"
+      },
+      "id": "fda42da0-f772-4369-b2e4-faf86b5685de",
+      "name": "Classify Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(i => ({ json: {\n  event_id: i.json.event_id,\n  status: 'dead',\n  last_error: 'unsupported_event_type_or_missing_email',\n  next_attempt_at: new Date().toISOString(),\n  updated_at: new Date().toISOString()\n}}));"
+      },
+      "id": "23283beb-4cdd-4bc8-b251-51e0849f1011",
+      "name": "Dead-letter Unsupported",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "events_inbox"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_id": "={{ $json.event_id }}",
+            "status": "={{ $json.status }}",
+            "last_error": "={{ $json.last_error }}",
+            "next_attempt_at": "={{ $json.next_attempt_at }}",
+            "updated_at": "={{ $json.updated_at }}"
+          },
+          "matchingColumns": [
+            "event_id"
+          ],
+          "schema": [
+            {
+              "id": "event_id",
+              "displayName": "event_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_error",
+              "displayName": "last_error",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_attempt_at",
+              "displayName": "next_attempt_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7516ca0c-ea00-42e9-9b27-2e26246cc970",
+      "name": "Update Event Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "nDYbMEFIrK0Fj0XX",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "123d1095-709f-4de6-8767-842d84da3276",
+      "name": "Manual: Replay Dead Letters",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE events_inbox\nSET status = 'retry', attempts = 0, next_attempt_at = now(), last_error = NULL, updated_at = now()\nWHERE status = 'dead'\nRETURNING event_id, type;",
+        "options": {}
+      },
+      "id": "de392e9c-aa8b-4a2d-9bb5-71b0f72461a1",
+      "name": "Requeue Dead Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -720,
+        832
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "nDYbMEFIrK0Fj0XX",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mock-crm",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c01e2383-4c48-47dc-9a1f-19da5ea7aa13",
+      "name": "Webhook Mock CRM",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        1120
+      ],
+      "webhookId": "fbea500c-077a-4ab9-aef9-9a76943a0b21"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Simulates an unreliable third-party API. Change the numbers to tune failure rates.\nconst r = Math.random();\nlet status = 200;\nif (r < 0.15) status = 500;\nelse if (r < 0.30) status = 429;\nreturn [{ json: { status, ok: status === 200, body: $input.first().json.body } }];"
+      },
+      "id": "f5ca421b-366c-4f89-86df-7b05245835cd",
+      "name": "Chaos (simulated failures)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "50a249db-8d8a-4d1f-86c7-4ca93302199c",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "eaedbf97-f434-46b5-9d7f-0d1a231adae3",
+      "name": "API Healthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -496,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "mode": "name",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "name",
+          "value": "crm_contacts"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "email": "={{ $json.body.email }}",
+            "name": "={{ $json.body.name }}",
+            "amount": "={{ $json.body.amount }}",
+            "last_event_id": "={{ $json.body.event_id }}",
+            "updated_at": "={{ $now.toISO() }}",
+            "stage": "={{ $json.body.stage || 'lead' }}"
+          },
+          "matchingColumns": [
+            "email"
+          ],
+          "schema": [
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "stage",
+              "displayName": "stage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_event_id",
+              "displayName": "last_event_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e366b2af-49f0-455d-891c-5066ac4eb9e8",
+      "name": "Upsert Contact",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -256,
+        1040
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "nDYbMEFIrK0Fj0XX",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":true}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "f88dff6f-0d0a-49a1-995e-a400603e80f6",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -16,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"error\":\"simulated failure\"}",
+        "options": {
+          "responseCode": "={{ $json.status }}"
+        }
+      },
+      "id": "fd74839e-abd4-48a0-acba-67fb34c803a1",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -256,
+        1216
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const emails = ['amira@example.com', 'youssef@example.com', 'sara@example.com', 'karim@example.com', 'nour@example.com'];\nconst types = ['user.signed_up', 'trial.started', 'invoice.paid', 'subscription.cancelled'];\nconst stamp = Date.now();\nconst out = [];\n\nemails.forEach((email, idx) => {\n  const name = email.split('@')[0];\n  types.slice(0, 1 + (idx % 4)).forEach((type, k) => {\n    out.push({ json: { tamper: false, body: {\n      event_id: `evt_${stamp}_${idx}_${k}`, type, timestamp: new Date().toISOString(),\n      payload: { email, name, amount: type === 'invoice.paid' ? 49 : 0 }\n    }}});\n  });\n});\n\n// 1) duplicate delivery of the first event (must be ignored)\nout.push({ json: { tamper: false, body: out[0].json.body } });\n// 2) forged event with a wrong signature (must be rejected with 401)\nout.push({ json: { tamper: true, body: { event_id: `evt_${stamp}_bad`, type: 'invoice.paid', timestamp: new Date().toISOString(), payload: { email: 'attacker@example.com', name: 'attacker', amount: 9999 } } } });\n// 3) unknown event type (must end in the dead-letter queue)\nout.push({ json: { tamper: false, body: { event_id: `evt_${stamp}_unk`, type: 'unknown.event', timestamp: new Date().toISOString(), payload: { email: 'x@example.com', name: 'x' } } } });\nreturn out;"
+      },
+      "id": "ec367b6d-c2f9-4280-839c-3af432736986",
+      "name": "Generate Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -976,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.body.event_id }}.{{ $json.body.type }}.{{ $json.body.timestamp }}",
+        "dataPropertyName": "signature",
+        "secret": "demo-secret-change-me"
+      },
+      "id": "0fa09cf9-02e6-46e5-8e05-0f05e208c41c",
+      "name": "Sign Events",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        -736,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(i => {\n  if (i.json.tamper) i.json.signature = 'deadbeef';\n  return i;\n});"
+      },
+      "id": "13934296-af0e-4696-90a0-ea7f934a7bdd",
+      "name": "Tamper One Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "927bed68-d837-463e-99f1-6f2aebc55ac6",
+      "name": "Send to Ingest Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -256,
+        1488
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const counts = {};\nfor (const i of $input.all()) {\n  const c = i.json.statusCode || 'error';\n  counts[c] = (counts[c] || 0) + 1;\n}\nreturn [{ json: { sent: $input.all().length, byStatusCode: counts } }];"
+      },
+      "id": "209311bd-cea4-45fa-a74d-ec5cfd2116a0",
+      "name": "Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        1488
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "7814f52b-2e53-48e0-8f78-b61b8cac1f67",
+      "name": "Daily 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -976,
+        1808
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT status,\n       count(*) AS events,\n       round((avg(extract(epoch FROM (updated_at - created_at))) FILTER (WHERE status = 'done'))::numeric, 1) AS avg_latency_s\nFROM events_inbox\nWHERE created_at > now() - interval '24 hours'\nGROUP BY status\nORDER BY status;",
+        "options": {}
+      },
+      "id": "ea291dff-7a53-4760-9dbb-2c6d7ff7fe76",
+      "name": "Last 24h Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -736,
+        1808
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "nDYbMEFIrK0Fj0XX",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst total = rows.reduce((a, r) => a + Number(r.events), 0);\nconst get = s => Number((rows.find(r => r.status === s) || {}).events || 0);\nconst dead = get('dead');\nconst done = get('done');\nconst failureRate = total ? ((dead / total) * 100).toFixed(1) : '0.0';\nconst lat = (rows.find(r => r.status === 'done') || {}).avg_latency_s;\n\nconst tr = rows.map(r => `<tr><td>${r.status}</td><td>${r.events}</td><td>${r.avg_latency_s ?? '-'}</td></tr>`).join('');\nconst html = `<h2>Integration health, last 24h</h2>\n<p><b>${total}</b> events, <b>${done}</b> synced, <b>${dead}</b> dead-lettered (${failureRate}% failure rate). Average time to sync: ${lat ?? '-'} s.</p>\n<table border='1' cellpadding='6' cellspacing='0' style='border-collapse:collapse;font-family:Arial,sans-serif'><tr><th>Status</th><th>Events</th><th>Avg latency (s)</th></tr>${tr}</table>\n${dead > 0 ? '<p><b>Action needed:</b> run the Replay Dead Letters workflow after fixing the cause.</p>' : ''}`;\n\nreturn [{ json: { subject: `Integration report: ${done}/${total} synced, ${dead} dead`, html } }];"
+      },
+      "id": "98253a07-383d-457c-b4a5-3521a12e62d4",
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        1808
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "integration@job-radar.local",
+        "toEmail": "me@job-radar.local",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "2885723a-1982-4a2c-8bf6-99989276d453",
+      "name": "Send Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -256,
+        1808
+      ],
+      "webhookId": "5616689a-347b-49b0-8b2b-4c9286353120",
+      "credentials": {
+        "smtp": {
+          "id": "IVSTmd2gVMxs8JaL",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Events": {
+      "main": [
+        [
+          {
+            "node": "Compute HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute HMAC": {
+      "main": [
+        [
+          {
+            "node": "Validate Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Event": {
+      "main": [
+        [
+          {
+            "node": "Signature OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature OK?": {
+      "main": [
+        [
+          {
+            "node": "Store in Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401 Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store in Inbox": {
+      "main": [
+        [
+          {
+            "node": "Respond 202 Accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Claim Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Events": {
+      "main": [
+        [
+          {
+            "node": "Transform to CRM Call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform to CRM Call": {
+      "main": [
+        [
+          {
+            "node": "Supported?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supported?": {
+      "main": [
+        [
+          {
+            "node": "Call CRM API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Dead-letter Unsupported",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call CRM API": {
+      "main": [
+        [
+          {
+            "node": "Classify Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Result": {
+      "main": [
+        [
+          {
+            "node": "Update Event Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dead-letter Unsupported": {
+      "main": [
+        [
+          {
+            "node": "Update Event Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual: Replay Dead Letters": {
+      "main": [
+        [
+          {
+            "node": "Requeue Dead Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Mock CRM": {
+      "main": [
+        [
+          {
+            "node": "Chaos (simulated failures)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chaos (simulated failures)": {
+      "main": [
+        [
+          {
+            "node": "API Healthy?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Healthy?": {
+      "main": [
+        [
+          {
+            "node": "Upsert Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Contact": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Events": {
+      "main": [
+        [
+          {
+            "node": "Sign Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign Events": {
+      "main": [
+        [
+          {
+            "node": "Tamper One Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tamper One Signature": {
+      "main": [
+        [
+          {
+            "node": "Send to Ingest Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to Ingest Webhook": {
+      "main": [
+        [
+          {
+            "node": "Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 18:00": {
+      "main": [
+        [
+          {
+            "node": "Last 24h Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last 24h Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report": {
+      "main": [
+        [
+          {
+            "node": "Send Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a218a243-14d8-47ae-9abb-1da8919fefaf",
+  "meta": {
+    "instanceId": "add1c7b06d6a4d124bebb5ebaf0d28db2111fc9a515c136cf41e01ccd0012d4c"
+  },
+  "nodeGroups": [],
+  "id": "RKp8nYAY29HxsaM2",
+  "tags": []
+}
